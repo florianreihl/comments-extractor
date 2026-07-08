@@ -10,6 +10,7 @@ Originally developed for exporting qualitative coding comments from interview tr
 - Google Docs HTML export support
 - Automatic file type detection
 - Process a single file or a directory
+- Option to export one combined CSV or one CSV per document
 - Graphical interface with drag-and-drop support
 - Command-line interface
 - CSV export
@@ -37,6 +38,8 @@ python app.py
 
 Select or drag a supported file or folder into the application, choose an output location, and click **Extract Comments**.
 
+When a folder is selected, a **"Create one CSV per document"** checkbox becomes available. Leave it unchecked to combine all comments into a single CSV, or check it to save a separate CSV alongside each source document.
+
 ### CLI
 
 Single file:
@@ -45,11 +48,19 @@ Single file:
 python comments_extractor.py -d Transcript.docx -s comments.csv
 ```
 
-Directory:
+Directory (combined CSV):
 
 ```bash
 python comments_extractor.py -d ./documents -s comments.csv
 ```
+
+Directory (one CSV per document):
+
+```bash
+python comments_extractor.py -d ./documents --separate
+```
+
+With `--separate`, each source document gets its own CSV saved next to it (e.g. `Transcript.docx` → `Transcript.csv`), and the `-s`/`--save` option is ignored.
 
 ## Google Docs
 

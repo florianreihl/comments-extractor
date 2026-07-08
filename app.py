@@ -3,29 +3,24 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from tkinterdnd2 import DND_FILES, TkinterDnD
-import pandas as pd
 
-from comments_extractor import get_files, extract_comment_data
+from comments_extractor import get_files, extract_files, default_output_path, write_csv
 
-
-COLUMNS = ["ID", "COMMENT_TEXT", "SPAN_TEXT", "FILENAME"]
 ASSETS_DIR = Path(__file__).parent / "assets"
 ICON_PATH = ASSETS_DIR / "icon.png"
 
 
-def default_output_path(path):
-    if path.is_file():
-        return path.with_suffix(".csv")
+def set_input_path(path):
+    path = Path(path)
+
+    input_path.set(str(path))
+    output_path.set(str(default_output_path(path)))
 
     if path.is_dir():
-        return path.parent / f"{path.name}.csv"
-
-    return Path.cwd() / "comments.csv"
-
-
-def set_input_path(path):
-    input_path.set(path)
-    output_path.set(str(default_output_path(Path(path))))
+        separate_checkbox.config(state="normal")
+    else:
+        separate_csvs.set(False)
+        separate_checkbox.config(state="disabled")
 
 
 def browse_file():
@@ -75,16 +70,14 @@ def handle_drop(event):
 
 def extract_comments():
     if not input_path.get():
-        messagebox.showerror("Missing input", "Please select or drag in a file or folder.")
+        messagebox.showerror(
+            "Missing input",
+            "Please select or drag in a file or folder.",
+        )
         return
 
     selected_input = Path(input_path.get())
-
-    if output_path.get():
-        csv_path = Path(output_path.get())
-    else:
-        csv_path = default_output_path(selected_input)
-        output_path.set(str(csv_path))
+    csv_path = Path(output_path.get()) if output_path.get() else default_output_path(selected_input)
 
     try:
         files = get_files(selected_input)
@@ -92,35 +85,37 @@ def extract_comments():
         progress_bar["value"] = 0
         progress_bar["maximum"] = max(len(files), 1)
 
-        all_records = []
-
         extract_button.config(state="disabled")
-        status_label.config(text="Starting extraction...")
+        status_label.config(text="Extracting comments...")
         root.update_idletasks()
 
-        for index, file in enumerate(files, start=1):
-            status_label.config(text=f"Processing {file.name}...")
-            root.update_idletasks()
+        all_records, records_by_file = extract_files(
+            files,
+            show_progress=False,
+        )
 
-            records = extract_comment_data(file)
-            all_records.extend(records)
+        progress_bar["value"] = len(files)
 
-            progress_bar["value"] = index
-            root.update_idletasks()
+        if separate_csvs.get() and selected_input.is_dir():
+            for file, records in records_by_file.items():
+                write_csv(records, file.with_suffix(".csv"))
 
-        df = pd.DataFrame.from_records(data=all_records, columns=COLUMNS)
-        df.to_csv(csv_path, index=False)
+            save_text = "Created one CSV per document."
+        else:
+            write_csv(all_records, csv_path)
+
+            save_text = f"Saved to {csv_path}."
 
         comment_count = len(all_records)
         file_count = len(files)
 
         status_label.config(
-            text=f"{comment_count} comments extracted from {file_count} document(s). Saved to {csv_path.name}."
+            text=f"{comment_count} comments extracted from {file_count} document(s). {save_text}"
         )
 
         messagebox.showinfo(
             "Success",
-            f"{comment_count} comments extracted from {file_count} document(s).\n\nSaved to:\n{csv_path}",
+            f"{comment_count} comments extracted from {file_count} document(s).\n\n{save_text}",
         )
 
     except Exception as error:
@@ -130,7 +125,6 @@ def extract_comments():
     finally:
         extract_button.config(state="normal")
 
-
 root = TkinterDnD.Tk()
 
 if ICON_PATH.exists():
@@ -138,11 +132,12 @@ if ICON_PATH.exists():
     root.iconphoto(True, app_icon)
 
 root.title("Comments Extractor")
-root.geometry("720x430")
+root.geometry("720x500")
 root.resizable(False, False)
 
 input_path = tk.StringVar()
 output_path = tk.StringVar()
+separate_csvs = tk.BooleanVar(value=False)
 
 main_frame = tk.Frame(root, padx=24, pady=20)
 main_frame.pack(fill="both", expand=True)
@@ -215,6 +210,15 @@ output_button = tk.Button(
     width=14,
 )
 output_button.pack(side="left")
+
+separate_checkbox = tk.Checkbutton(
+    output_frame,
+    text="Create one CSV per document (folders only)",
+    variable=separate_csvs,
+)
+separate_checkbox.pack(anchor="w", pady=(6, 0))
+
+separate_checkbox.config(state="disabled")
 
 progress_bar = ttk.Progressbar(
     main_frame,

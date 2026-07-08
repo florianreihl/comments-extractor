@@ -12,6 +12,7 @@ import pandas as pd
 
 
 NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+COLUMNS = ["ID", "COMMENT_TEXT", "SPAN_TEXT", "FILENAME"]
 
 
 def norm(text):
@@ -139,22 +140,64 @@ def get_files(path):
 
     raise ValueError(f"{path} does not exist.")
 
+def extract_files(files, show_progress=True):
+    all_records = []
+    records_by_file = {}
+
+    iterator = tqdm(files, desc="Extracting Comments") if show_progress else files
+
+    for file in iterator:
+        records = extract_comment_data(file)
+        records_by_file[file] = records
+        all_records.extend(records)
+
+    return all_records, records_by_file
+
+
+def write_csv(records, path):
+    """Write a list of comment records to a CSV file at `path`.
+
+    Shared by the CLI and the GUI so both save data the same way.
+    """
+    df = pd.DataFrame.from_records(data=records, columns=COLUMNS)
+    df.to_csv(path, index=False)
+
+
+def save_combined_csv(files, save_path):
+    all_records, _ = extract_files(files)
+    write_csv(all_records, save_path)
+
+
+def save_separate_csvs(files):
+    _, records_by_file = extract_files(files)
+
+    for file, records in records_by_file.items():
+        write_csv(records, file.with_suffix(".csv"))
+
+def default_output_path(path):
+    if path.is_file():
+        return path.with_suffix(".csv")
+
+    if path.is_dir():
+        return path / f"{path.name}.csv"
+
+    return Path.cwd() / "comments.csv"
 
 def main(args):
     files = get_files(args.data)
 
-    data = [
-        record
-        for file in tqdm(files, desc="Extracting Comments")
-        for record in extract_comment_data(file)
-    ]
+    if args.separate:
+        save_separate_csvs(files)
+        return
 
-    df = pd.DataFrame.from_records(
-        data=data,
-        columns=["ID", "COMMENT_TEXT", "SPAN_TEXT", "FILENAME"],
-    )
+    if args.save:
+        save_path = args.save
+    elif args.data.is_file():
+        save_path = args.data.with_suffix(".csv")
+    else:
+        save_path = args.data / f"{args.data.name}.csv"
 
-    df.to_csv(args.save, index=False)
+    save_combined_csv(files, save_path)
 
 
 def add_args(parser):
@@ -170,8 +213,14 @@ def add_args(parser):
         "-s",
         "--save",
         type=str,
-        required=True,
-        help="The save path for the CSV file.",
+        required=False,
+        help="The save path for the combined CSV file.",
+    )
+
+    parser.add_argument(
+        "--separate",
+        action="store_true",
+        help="Create one CSV file per document.",
     )
 
 
