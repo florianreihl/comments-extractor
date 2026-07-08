@@ -15,12 +15,18 @@ from comments_extractor import (
 ASSETS_DIR = Path(__file__).parent / "assets"
 ICON_PATH = ASSETS_DIR / "icon.png"
 
+last_dir = Path.cwd()
+
 
 def set_input_path(path):
+    global last_dir
+
     path = Path(path)
 
     input_path.set(str(path))
     output_path.set(str(default_output_path(path)))
+
+    last_dir = path if path.is_dir() else path.parent
 
     if path.is_dir():
         separate_checkbox.config(state="normal")
@@ -32,6 +38,7 @@ def set_input_path(path):
 def browse_file():
     path = filedialog.askopenfilename(
         title="Select a file",
+        initialdir=last_dir,
         filetypes=[
             ("Supported files", "*.docx *.html *.htm"),
             ("Word files", "*.docx"),
@@ -46,7 +53,7 @@ def browse_file():
 
 
 def browse_folder():
-    path = filedialog.askdirectory(title="Select a folder")
+    path = filedialog.askdirectory(title="Select a folder", initialdir=last_dir)
 
     if path:
         set_input_path(path)
@@ -54,14 +61,18 @@ def browse_folder():
 
 
 def browse_output():
+    global last_dir
+
     path = filedialog.asksaveasfilename(
         title="Save CSV file",
+        initialdir=last_dir,
         defaultextension=".csv",
         filetypes=[("CSV files", "*.csv")],
     )
 
     if path:
         output_path.set(path)
+        last_dir = Path(path).parent
 
 
 def handle_drop(event):
@@ -95,7 +106,7 @@ def extract_comments():
         status_label.config(text="Extracting comments...")
         root.update_idletasks()
 
-        all_records, records_by_file = extract_files(
+        all_records, records_by_file, errors = extract_files(
             files,
             show_progress=False,
         )
@@ -118,15 +129,29 @@ def extract_comments():
 
         comment_count = len(all_records)
         file_count = len(files)
+        failed_count = len(errors)
+        succeeded_count = file_count - failed_count
 
         status_label.config(
-            text=f"{comment_count} comments extracted from {file_count} document(s). {save_text}"
+            text=(
+                f"{comment_count} comments extracted from {succeeded_count}/{file_count} document(s). {save_text}"
+                + (f" {failed_count} file(s) failed." if failed_count else "")
+            )
         )
 
-        messagebox.showinfo(
-            "Success",
-            f"{comment_count} comments extracted from {file_count} document(s).\n\n{save_text}",
-        )
+        if errors:
+            failure_lines = "\n".join(f"- {file.name}: {message}" for file, message in errors)
+            messagebox.showwarning(
+                "Completed with errors",
+                f"{comment_count} comments extracted from {succeeded_count}/{file_count} document(s).\n\n"
+                f"{save_text}\n\n"
+                f"The following file(s) could not be processed:\n{failure_lines}",
+            )
+        else:
+            messagebox.showinfo(
+                "Success",
+                f"{comment_count} comments extracted from {file_count} document(s).\n\n{save_text}",
+            )
 
     except Exception as error:
         status_label.config(text="Error.")

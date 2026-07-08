@@ -1,11 +1,12 @@
 from pathlib import Path
 from zipfile import ZipFile
 from xml.etree import ElementTree as ET
+from datetime import datetime
 
 from bs4 import BeautifulSoup
-from tqdm import tqdm
 
 import argparse
+import logging
 import re
 import unicodedata
 import pandas as pd
@@ -13,6 +14,39 @@ import pandas as pd
 
 NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 COLUMNS = ["ID", "COMMENT_TEXT", "SPAN_TEXT", "FILENAME"]
+
+logger = logging.getLogger("comments_extractor")
+
+
+def configure_logging(log_dir=None, console=True):
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+
+    if log_dir is not None:
+        log_dir = Path(log_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        progress_handler = logging.FileHandler(log_dir / "progress.log", mode="a", encoding="utf-8")
+        progress_handler.setLevel(logging.INFO)
+        progress_handler.setFormatter(formatter)
+        logger.addHandler(progress_handler)
+
+        error_handler = logging.FileHandler(log_dir / "errors.log", mode="a", encoding="utf-8")
+        error_handler.setLevel(logging.ERROR)
+        error_handler.setFormatter(formatter)
+        logger.addHandler(error_handler)
+
+    if console:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(console_handler)
+
+    logger.info(f"=== Run started {datetime.now().isoformat(timespec='seconds')} ===")
+
+    return log_dir
 
 
 def norm(text):
@@ -143,29 +177,38 @@ def get_files(path):
 def extract_files(files, show_progress=True):
     all_records = []
     records_by_file = {}
+    errors = []
 
-    iterator = tqdm(files, desc="Extracting Comments") if show_progress else files
+    total = len(files)
 
-    for file in iterator:
-        records = extract_comment_data(file)
+    for index, file in enumerate(files, start=1):
+        if show_progress:
+            logger.info(f"[{index}/{total}] Extracting comments from {file.name}")
+
+        try:
+            records = extract_comment_data(file)
+        except Exception as error:
+            message = str(error)
+            logger.error(f"Failed to extract comments from {file.name}: {message}")
+            errors.append((file, message))
+            records = []
+
         records_by_file[file] = records
         all_records.extend(records)
 
-    return all_records, records_by_file
+    return all_records, records_by_file, errors
 
 
 def write_csv(records, path):
-    """Write a list of comment records to a CSV file at `path`.
-
-    Shared by the CLI and the GUI so both save data the same way.
-    """
     df = pd.DataFrame.from_records(data=records, columns=COLUMNS)
     df.to_csv(path, index=False)
 
 
 def save_combined_csv(files, save_path):
-    all_records, _ = extract_files(files)
+    all_records, _, errors = extract_files(files)
     write_csv(all_records, save_path)
+    logger.info(f"Saved combined CSV with {len(all_records)} comment(s) to {save_path}")
+    return errors
 
 
 def resolve_separate_csv_paths(files):
@@ -195,15 +238,18 @@ def resolve_separate_csv_paths(files):
 
 
 def save_separate_csvs(files):
-    _, records_by_file = extract_files(files)
+    _, records_by_file, errors = extract_files(files)
 
     paths, warnings = resolve_separate_csv_paths(files)
 
     for warning in warnings:
-        print(f"Warning: {warning}")
+        logger.warning(warning)
 
     for file, records in records_by_file.items():
         write_csv(records, paths[file])
+        logger.info(f"Saved {len(records)} comment(s) from {file.name} to {paths[file].name}")
+
+    return errors
 
 def default_output_path(path):
     if path.is_file():
@@ -215,20 +261,35 @@ def default_output_path(path):
     return Path.cwd() / "comments.csv"
 
 def main(args):
+    log_dir = configure_logging(args.log_dir, console=not args.quiet)
+
+    if log_dir:
+        logger.info(f"Logs for this run: {log_dir / 'progress.log'} and {log_dir / 'errors.log'}")
+
     files = get_files(args.data)
+    logger.info(f"Found {len(files)} file(s) to process in {args.data}")
 
     if args.separate:
-        save_separate_csvs(files)
-        return
-
-    if args.save:
-        save_path = args.save
-    elif args.data.is_file():
-        save_path = args.data.with_suffix(".csv")
+        errors = save_separate_csvs(files)
     else:
-        save_path = args.data / f"{args.data.name}.csv"
+        if args.save:
+            save_path = args.save
+        elif args.data.is_file():
+            save_path = args.data.with_suffix(".csv")
+        else:
+            save_path = args.data / f"{args.data.name}.csv"
 
-    save_combined_csv(files, save_path)
+        errors = save_combined_csv(files, save_path)
+
+    if errors:
+        if log_dir:
+            logger.info(f"{len(errors)} of {len(files)} file(s) failed -- see errors.log for details.")
+        else:
+            logger.info(f"{len(errors)} of {len(files)} file(s) failed:")
+            for file, message in errors:
+                logger.info(f"  - {file.name}: {message}")
+
+    logger.info("=== Run finished ===")
 
 
 def add_args(parser):
@@ -252,6 +313,21 @@ def add_args(parser):
         "--separate",
         action="store_true",
         help="Create one CSV file per document.",
+    )
+
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        required=False,
+        default=None,
+        help="Write progress.log and errors.log to this directory. If omitted, nothing is written to disk.",
+    )
+
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress terminal output. Has no effect on --log-dir; if that's set, the log files are still written.",
     )
 
 

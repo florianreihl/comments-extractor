@@ -9,11 +9,12 @@ from comments_extractor import main
 
 
 class Args:
-    def __init__(self, data, save=None, separate=False, log_dir=None):
+    def __init__(self, data, save=None, separate=False, log_dir=None, quiet=False):
         self.data = Path(data)
         self.save = save
         self.separate = separate
         self.log_dir = log_dir
+        self.quiet = quiet
 
 
 def test_sample_file_extracts_comment(tmp_path):
@@ -42,7 +43,6 @@ def test_sample_file_extracts_comment(tmp_path):
 def test_separate_csv_output(tmp_path):
     sample_file = Path(__file__).parent / "data" / "sample.docx"
 
-    # Copy sample into a temporary directory so we don't write into tests/data
     copied_sample = tmp_path / "sample.docx"
     copied_sample.write_bytes(sample_file.read_bytes())
 
@@ -79,11 +79,6 @@ def test_default_output_filename(tmp_path):
 
 
 def test_separate_csv_duplicate_stem_names(tmp_path):
-    """Two files that share a name but differ by extension (sample.docx
-    and sample.html) would both naively resolve to sample.csv. Make sure
-    the collision is caught and both get renamed instead of one silently
-    overwriting the other.
-    """
     sample_file = Path(__file__).parent / "data" / "sample.docx"
 
     docx_copy = tmp_path / "sample.docx"
@@ -110,7 +105,7 @@ def test_separate_csv_duplicate_stem_names(tmp_path):
     )
 
     main(Args(tmp_path, separate=True, log_dir=tmp_path))
-    
+
     assert not (tmp_path / "sample.csv").exists()
 
     docx_csv = tmp_path / "sample.docx.csv"
