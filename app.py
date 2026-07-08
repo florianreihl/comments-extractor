@@ -13,6 +13,21 @@ ASSETS_DIR = Path(__file__).parent / "assets"
 ICON_PATH = ASSETS_DIR / "icon.png"
 
 
+def default_output_path(path):
+    if path.is_file():
+        return path.with_suffix(".csv")
+
+    if path.is_dir():
+        return path.parent / f"{path.name}.csv"
+
+    return Path.cwd() / "comments.csv"
+
+
+def set_input_path(path):
+    input_path.set(path)
+    output_path.set(str(default_output_path(Path(path))))
+
+
 def browse_file():
     path = filedialog.askopenfilename(
         title="Select a file",
@@ -25,7 +40,7 @@ def browse_file():
     )
 
     if path:
-        input_path.set(path)
+        set_input_path(path)
         status_label.config(text="File selected.")
 
 
@@ -33,7 +48,7 @@ def browse_folder():
     path = filedialog.askdirectory(title="Select a folder")
 
     if path:
-        input_path.set(path)
+        set_input_path(path)
         status_label.config(text="Folder selected.")
 
 
@@ -54,7 +69,7 @@ def handle_drop(event):
     if path.startswith("{") and path.endswith("}"):
         path = path[1:-1]
 
-    input_path.set(path)
+    set_input_path(path)
     status_label.config(text="Input selected by drag and drop.")
 
 
@@ -63,12 +78,16 @@ def extract_comments():
         messagebox.showerror("Missing input", "Please select or drag in a file or folder.")
         return
 
-    if not output_path.get():
-        messagebox.showerror("Missing output", "Please choose where to save the CSV.")
-        return
+    selected_input = Path(input_path.get())
+
+    if output_path.get():
+        csv_path = Path(output_path.get())
+    else:
+        csv_path = default_output_path(selected_input)
+        output_path.set(str(csv_path))
 
     try:
-        files = get_files(Path(input_path.get()))
+        files = get_files(selected_input)
 
         progress_bar["value"] = 0
         progress_bar["maximum"] = max(len(files), 1)
@@ -90,18 +109,18 @@ def extract_comments():
             root.update_idletasks()
 
         df = pd.DataFrame.from_records(data=all_records, columns=COLUMNS)
-        df.to_csv(output_path.get(), index=False)
+        df.to_csv(csv_path, index=False)
 
         comment_count = len(all_records)
         file_count = len(files)
 
         status_label.config(
-            text=f"{comment_count} comments extracted from {file_count} document(s)."
+            text=f"{comment_count} comments extracted from {file_count} document(s). Saved to {csv_path.name}."
         )
 
         messagebox.showinfo(
             "Success",
-            f"{comment_count} comments extracted from {file_count} document(s).",
+            f"{comment_count} comments extracted from {file_count} document(s).\n\nSaved to:\n{csv_path}",
         )
 
     except Exception as error:
