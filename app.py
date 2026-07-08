@@ -4,7 +4,13 @@ from tkinter import filedialog, messagebox, ttk
 
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
-from comments_extractor import get_files, extract_files, default_output_path, write_csv
+from comments_extractor import (
+    get_files,
+    extract_files,
+    default_output_path,
+    write_csv,
+    resolve_separate_csv_paths,
+)
 
 ASSETS_DIR = Path(__file__).parent / "assets"
 ICON_PATH = ASSETS_DIR / "icon.png"
@@ -97,10 +103,14 @@ def extract_comments():
         progress_bar["value"] = len(files)
 
         if separate_csvs.get() and selected_input.is_dir():
+            paths, warnings = resolve_separate_csv_paths(files)
+
             for file, records in records_by_file.items():
-                write_csv(records, file.with_suffix(".csv"))
+                write_csv(records, paths[file])
 
             save_text = "Created one CSV per document."
+            if warnings:
+                save_text += "\n\n" + "\n".join(warnings)
         else:
             write_csv(all_records, csv_path)
 

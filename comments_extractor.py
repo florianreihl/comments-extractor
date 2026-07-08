@@ -168,11 +168,42 @@ def save_combined_csv(files, save_path):
     write_csv(all_records, save_path)
 
 
+def resolve_separate_csv_paths(files):
+    proposed = {file: file.with_suffix(".csv") for file in files}
+
+    counts = {}
+    for path in proposed.values():
+        counts[path] = counts.get(path, 0) + 1
+
+    colliding_paths = {path for path, count in counts.items() if count > 1}
+
+    paths = {}
+    warnings = []
+
+    for file, path in proposed.items():
+        if path in colliding_paths:
+            fallback = file.with_name(f"{file.name}.csv")
+            paths[file] = fallback
+            warnings.append(
+                f"'{path.name}' would be used by more than one file; "
+                f"saving {file.name} as {fallback.name} instead."
+            )
+        else:
+            paths[file] = path
+
+    return paths, warnings
+
+
 def save_separate_csvs(files):
     _, records_by_file = extract_files(files)
 
+    paths, warnings = resolve_separate_csv_paths(files)
+
+    for warning in warnings:
+        print(f"Warning: {warning}")
+
     for file, records in records_by_file.items():
-        write_csv(records, file.with_suffix(".csv"))
+        write_csv(records, paths[file])
 
 def default_output_path(path):
     if path.is_file():
