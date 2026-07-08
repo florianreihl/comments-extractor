@@ -21,7 +21,7 @@ Originally developed for exporting qualitative coding comments from interview tr
 Clone the repository and install the dependencies.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/comments-extractor.git
+git clone https://github.com/florianreihl/comments-extractor.git
 cd comments-extractor
 
 pip install -r requirements.txt
